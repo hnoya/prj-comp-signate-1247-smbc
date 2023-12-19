@@ -1,3 +1,8 @@
+# Custom
+data/
+models/
+features
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
