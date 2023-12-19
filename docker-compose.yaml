@@ -1,0 +1,14 @@
+services:
+  dev:
+    build: .
+    volumes:
+      - .:/work
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    stdin_open: true
+    tty: true
