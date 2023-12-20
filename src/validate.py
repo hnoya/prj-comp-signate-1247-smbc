@@ -32,7 +32,7 @@ def get_fold_maker_split(
     y: Optional[Union[list[int], list[float]]] = None,
     groups: Optional[Union[list[int], list[str]]] = None,
 ):
-    if validate_type == "kfold":
+    if validate_type == "KFold":
         foldmaker = validate_func.split(X)
     elif validate_type == "GroupKFold":
         foldmaker = validate_func.split(X, y, groups)

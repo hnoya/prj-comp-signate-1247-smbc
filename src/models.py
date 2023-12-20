@@ -7,6 +7,13 @@ import numpy as np
 import catboost
 import lightgbm
 
+from sklearn.metrics import f1_score
+
+def macro_f1(y_pred, data):
+    y_true = data.get_label()
+    score = f1_score(np.round(y_pred), y_true, average="macro")
+    return 'macro_f1', score, True
+
 
 def train_catboost(
     train_set: tuple[pd.DataFrame, pd.DataFrame],
@@ -24,16 +31,17 @@ def train_catboost(
     eval_data = catboost.Pool(X_valid, label=y_valid, cat_features=categorical_features)
     # see: https://catboost.ai/en/docs/concepts/loss-functions-ranking#usage-information
     ctb_params = {
-        "objective": "CrossEntropy",  # "MultiClass",
+        "objective": "MultiClass",  # "MultiClass",
         "loss_function": "CrossEntropy",  # "CrossEntropy",
-        "eval_metric": "AUC",
-        "num_boost_round": 200,
-        "early_stopping_rounds": 1000,
-        "learning_rate": 0.1,
-        "verbose": 100,
+        "eval_metric": "TotalF1:average=Macro",
+        "num_boost_round": 10_000,
+        "early_stopping_rounds": 1_000,
+        "learning_rate": 0.01,
+        "verbose": 1_000,
         "random_seed": seed,
         "task_type": "GPU",
         # "used_ram_limit": "32gb",
+        "class_weights": [1000/3535, 1000/15751, 1000/698],
     }
 
     model = catboost.CatBoost(ctb_params)
@@ -90,11 +98,10 @@ def train_lightgbm(
         X_valid, label=y_valid, categorical_feature=categorical_features
     )
     lgb_params = {
-        "objective": "binary",
-        # "num_class": 13807, # int(max([max(y_train), max(y_valid)])),
-        "metric": "auc",
+        "objective": "multiclass",
+        "num_class": 3,
+        "metric": "custom", # "auc"
         "learning_rate": 0.01,
-        # "metric": "map",
         "seed": seed,
         "verbose": -1,
     }
@@ -108,6 +115,7 @@ def train_lightgbm(
             lightgbm.early_stopping(stopping_rounds=1000, verbose=True),
             lightgbm.log_evaluation(200),
         ],
+        feval=macro_f1,
     )
     pickle.dump(
         model, open(os.path.join(output_path, "lgb_fold{}.lgbmodel".format(fold)), "wb")

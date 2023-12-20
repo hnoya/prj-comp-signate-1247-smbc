@@ -1,5 +1,6 @@
 # %%
 from dataclasses import dataclass
+import os
 
 import pandas as pd
 
@@ -9,12 +10,15 @@ sys.path.append("../")
 
 from src.utils import seed_everything
 from src.convert import apply_le
+from src.validate import validate
+from src.models import train_folds_v2
 
 # %%
 
 @dataclass
 class Config:
     experiment_name: str = "20231220_01"
+    n_fold: int = 5
     seed: int = 0
 
 @dataclass
@@ -25,6 +29,7 @@ class CSVPath:
 
 
 seed_everything(Config.seed)
+os.makedirs(f"../models/{Config.experiment_name}", exist_ok=True)
 
 # %%
 train = pd.read_csv(CSVPath.train).drop(["Unnamed: 0"], axis=1)
@@ -70,7 +75,7 @@ def convert_rawdata_to_traindata(train: pd.DataFrame, test: pd.DataFrame) -> tup
     
     train_and_test = pd.concat([train.drop(["health"], axis=1), test], ignore_index=True)
     for col in ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "spc_latin", "nta", "nta_name", "boroname", "zip_city"]:
-        train_and_test = apply_le(train_and_test, col, keep_nan=True)
+        train_and_test = apply_le(train_and_test, col, keep_nan=False)
         train[col] = train_and_test[col].iloc[:len(train)]
         test[col] = train_and_test[col].iloc[-len(test):]
 
@@ -81,5 +86,72 @@ train, test = convert_rawdata_to_traindata(train, test)
 
 # %%
 train.head(3)
+
+# %%
+import seaborn as sns
+
+sns.kdeplot(train["created_at_float"], color="blue")
+sns.kdeplot(test["created_at_float"], color="red")
+
+# %%
+for col in ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "spc_latin", "nta", "nta_name", "boroname", "zip_city"]:
+    train_set = set(train[col].tolist())
+    test_set = set(test[col].tolist())
+    if len(test_set - train_set):
+        print(col, test_set - train_set)
+
+# %%
+train["fold"] = validate("KFold", train, Config.n_fold, train["health"].tolist(), random_state=Config.seed, shuffle=True)
+
+# %%
+train.head(3)
+
+# %%
+train["health"].value_counts()
+
+# %%
+
+
+# %%
+train_folds_v2(
+    train,
+    list(range(Config.n_fold)),
+    Config.seed,
+    "ctb",
+    "health",
+    ["health", "fold"],
+    ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "spc_latin", "nta", "nta_name", "boroname", "zip_city"],
+    f"../models/{Config.experiment_name}"
+)
+
+# %%
+
+
+# %%
+import numpy as np
+import matplotlib.pyplot as plt
+import pickle
+
+feature_importance = None
+for i in range(Config.n_fold):
+    model = pickle.load(
+        open(f"/work/models/20231220_01/ctb_fold{i}.ctbmodel", "rb")
+    )
+    if feature_importance is None:
+        feature_importance = model.feature_importances_
+    else:
+        feature_importance += model.feature_importances_
+sorted_idx = np.argsort(feature_importance)
+fig = plt.figure(figsize=(12, 6))
+plt.barh(range(len(sorted_idx)), feature_importance[sorted_idx], align='center')
+plt.yticks(
+    range(len(sorted_idx)),
+    np.array([col for col in train.columns if col not in ["health", "fold"]])[sorted_idx]
+)
+plt.title('Feature Importance')
+
+
+# %%
+
 
 
