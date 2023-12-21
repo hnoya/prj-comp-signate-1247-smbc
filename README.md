@@ -5,3 +5,4 @@
 | no | hash | memo |
 | -- | ---- | ---- |
 | 20231220_01 | 7dd636817dcfc21672f46cab1fdccce6fb7cbdbb | EDA |
+| 20231221_01 | 3245617eb98e850345d14ca30f29d0acb0d61f44 | Fix categorical columns |
