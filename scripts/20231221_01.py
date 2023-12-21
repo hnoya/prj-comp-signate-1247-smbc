@@ -76,7 +76,8 @@ def convert_rawdata_to_traindata(train: pd.DataFrame, test: pd.DataFrame) -> tup
     test = apply_single_fe(test)
     
     train_and_test = pd.concat([train.drop(["health"], axis=1), test], ignore_index=True)
-    for col in ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "spc_latin", "nta", "nta_name", "boroname", "zip_city"]:
+    for col in ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "spc_latin", "nta", "nta_name",
+                "boroname", "borocode", "boro_ct", "zip_city", "st_assem", "st_senate", "cb_num", "cncldist"]:
         train_and_test = apply_le(train_and_test, col, keep_nan=False)
         train[col] = train_and_test[col].iloc[:len(train)].tolist()
         test[col] = train_and_test[col].iloc[-len(test):].tolist()
@@ -146,42 +147,50 @@ test = df.iloc[len(test):].reset_index(drop=True)
 train.head(3)
 
 # %%
-all_cols = ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "spc_latin", "nta", "nta_name",
+cat_cols = ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "spc_latin", "nta", "nta_name",
      "boroname", "borocode", "boro_ct", "zip_city", "st_assem", "st_senate", "cb_num", "cncldist"]
-scores = []
-for col in all_cols:
-    train_folds_v2(
-        train,
-        [0],
-        Config.seed,
-        "lgb",
-        "health",
-        ["health", "fold"] + [_col for _col in all_cols if _col != col],
-        [col],
-        f"../models/{Config.experiment_name}"
-    )
 
-    oof_preds_lgb = eval_folds_v2(
-        train,
-        [0],
-        Config.seed,
-        "lgb",
-        "health",
-        ["health", "fold"] + [_col for _col in all_cols if _col != col],
-        [col],
-        f"../models/{Config.experiment_name}"
-    )
+train_folds_v2(
+    train,
+    list(range(Config.n_fold)),
+    Config.seed,
+    "lgb",
+    "health",
+    ["health", "fold"],
+    cat_cols,
+    f"../models/{Config.experiment_name}"
+)
 
-    # score = f1_score(train["health"], np.argmax(oof_preds_lgb, axis=1), average='macro')
-    score = f1_score(
-        train.loc[train["fold"] == 0, "health"],
-        np.argmax(oof_preds_lgb[train.loc[train["fold"] == 0].index.to_numpy()], axis=1), average='macro',
-    )
-    scores.append(score)
+oof_preds_lgb = eval_folds_v2(
+    train,
+    list(range(Config.n_fold)),
+    Config.seed,
+    "lgb",
+    "health",
+    ["health", "fold"],
+    cat_cols,
+    f"../models/{Config.experiment_name}"
+)
 
-# %%
-for col, socre in zip(all_cols, scores):
-    print(col, score)
+score = f1_score(train["health"], np.argmax(oof_preds_lgb, axis=1), average='macro')
+print(score)
+
+# %% [markdown]
+# ```
+# "curb_loc"	[3854]	training's macro_f1: 0.505183	valid_1's macro_f1: 0.314676
+# "guards"	[4385]	training's macro_f1: 0.541282	valid_1's macro_f1: 0.324406
+# "sidewalk"	[2417]	training's macro_f1: 0.490128	valid_1's macro_f1: 0.311174
+# "user_type"	[4567]	training's macro_f1: 0.566641	valid_1's macro_f1: 0.322022
+# "problems"	[4150]	training's macro_f1: 0.587765	valid_1's macro_f1: 0.325518
+# "spc_common"[4632]	training's macro_f1: 0.698464	valid_1's macro_f1: 0.350008
+# "spc_latin"	[4632]	training's macro_f1: 0.698464	valid_1's macro_f1: 0.350008
+# "nta"		[3222]	training's macro_f1: 0.773169	valid_1's macro_f1: 0.335999
+# "nta_name"	[3222]	training's macro_f1: 0.773169	valid_1's macro_f1: 0.335999
+# "boroname"	[1557]	training's macro_f1: 0.482876	valid_1's macro_f1: 0.306258
+# "borocode"	[1557]	training's macro_f1: 0.482876	valid_1's macro_f1: 0.306258
+# "boro_ct"	[1708]	training's macro_f1: 0.705046	valid_1's macro_f1: 0.331362 -> error
+# "zip_city"
+# ```
 
 # %% [markdown]
 # - ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "spc_latin", "nta", "nta_name", "boroname", "zip_city"]
@@ -215,7 +224,8 @@ for col, socre in zip(all_cols, scores):
 
 # %% [markdown]
 # - baseline(20231220_01): 0.35184990907259234
-# - health te: 0.35722605341270736
+# - fixed cat_cols: 0.35653867230742026
+# 
 
 # %%
 raise NotImplementedError()
