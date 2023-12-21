@@ -113,7 +113,7 @@ train.head(3)
 train["health"].value_counts()
 
 # %%
-"""
+# """
 train_folds_v2(
     train,
     list(range(Config.n_fold)),
@@ -124,7 +124,7 @@ train_folds_v2(
     ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "spc_latin", "nta", "nta_name", "boroname", "zip_city"],
     f"../models/{Config.experiment_name}"
 )
-"""
+# """
 
 # %%
 oof_preds_ctb = eval_folds_v2(
@@ -191,7 +191,7 @@ y_preds = predict_catboost(
 
 
 # %%
-"""
+# """
 train_folds_v2(
     train,
     list(range(Config.n_fold)),
@@ -202,7 +202,7 @@ train_folds_v2(
     ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "spc_latin", "nta", "nta_name", "boroname", "zip_city"],
     f"../models/{Config.experiment_name}"
 )
-"""
+# """
 
 # %%
 oof_preds_lgb = eval_folds_v2(
