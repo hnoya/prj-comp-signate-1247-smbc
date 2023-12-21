@@ -228,9 +228,6 @@ print(score)
 # 
 
 # %%
-raise NotImplementedError()
-
-# %%
 train_folds_v2(
     train,
     list(range(Config.n_fold)),
@@ -260,15 +257,59 @@ print(
 )
 
 
+# %% [markdown]
+# - 0.3420488873782377
+
+# %%
+import numpy as np
+import matplotlib.pyplot as plt
+import pickle
+
+feature_importance = None
+for i in range(Config.n_fold):
+    model = pickle.load(
+        open(f"/work/models/20231220_01/ctb_fold{i}.ctbmodel", "rb")
+    )
+    if feature_importance is None:
+        feature_importance = model.feature_importances_
+    else:
+        feature_importance += model.feature_importances_
+sorted_idx = np.argsort(feature_importance)
+fig = plt.figure(figsize=(12, 6))
+plt.barh(range(len(sorted_idx)), feature_importance[sorted_idx], align='center')
+plt.yticks(
+    range(len(sorted_idx)),
+    np.array([col for col in train.columns if col not in ["health", "fold"]])[sorted_idx]
+)
+plt.title('Feature Importance')
+
+
 # %%
 
 
 # %%
-y_preds = predict_lightgbm(
+y_preds_lgb = predict_lightgbm(
     test[[col for col in test.columns if col not in ["health", "fold"]]],
     list(range(Config.n_fold)),
     f"../models/{Config.experiment_name}",
 )
+
+y_preds_ctb = predict_catboost(
+    test[[col for col in test.columns if col not in ["health", "fold"]]],
+    list(range(Config.n_fold)),
+    ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "spc_latin", "nta", "nta_name",
+     "boroname", "borocode", "boro_ct", "zip_city", "st_assem", "st_senate", "cb_num", "cncldist"],
+    f"../models/{Config.experiment_name}",
+)
+
+# %%
+oof_preds_ctb_calib = apply_sigmoid(oof_preds_ctb)
+oof_preds_ctb_calib /= np.sum(oof_preds_ctb_calib, axis=1).reshape(-1, 1)
+
+for i in range(10):
+    print(
+        i, f1_score(train["health"], np.argmax(oof_preds_lgb * i * 0.1 + oof_preds_ctb * (10 - i) * 0.1, axis=1), average='macro')
+    )
 
 # %%
 
