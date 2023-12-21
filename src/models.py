@@ -135,6 +135,18 @@ def eval_lightgbm(
     return y_pred
 
 
+def predict_lightgbm(
+    X_test: pd.DataFrame, folds: list[int], model_path: str = "../models"
+) -> np.ndarray:
+    y_pred = np.zeros((X_test.shape[0], 3), dtype="float32")
+    for fold in folds:
+        model = pickle.load(
+            open(os.path.join(model_path, "lgb_fold{}.lgbmodel".format(fold)), "rb")
+        )
+        y_pred += model.predict(X_test, num_iteration=model.best_iteration) / len(folds)
+    return y_pred
+
+
 def eval_folds(
     train: pd.DataFrame,
     n_fold: int,
