@@ -91,6 +91,9 @@ train["fold"] = validate("KFold", train, Config.n_fold, train["health"].tolist()
 train.head(3)
 
 # %%
+test.head(3)
+
+# %%
 def add_te(train, test, col):
     for class_idx in range(3):
         train[f"health_is_{class_idx}"] = (train["health"].to_numpy() == class_idx).astype(int).tolist()
@@ -111,20 +114,25 @@ def add_te(train, test, col):
         te = train.groupby(
             col, as_index=False
         ).agg({f"health_is_{class_idx}": 'mean'}).rename(columns={f"health_is_{class_idx}": f"health_is_{class_idx}_te_by_{col}"})
-        test = pd.merge(test, te, on=col, how="right")
+        te_dict = te.to_dict()[f"health_is_{class_idx}_te_by_{col}"]
+        test[f"health_is_{class_idx}_te_by_{col}"] = test[col].apply(lambda x: te_dict[x])
 
         train = train.drop([f"health_is_{class_idx}"], axis=1)
     return train, test
 
 # %%
 train, test = add_te(train, test, "spc_common")
-# train, test = add_te(train, test, "boro_ct")
-
-# %%
-
+train, test = add_te(train, test, "boro_ct")
+# train, test = add_te(train, test, "nta")
+# train, test = add_te(train, test, "st_assem")
+# train, test = add_te(train, test, "cb_num")
+# train, test = add_te(train, test, "problems")
 
 # %%
 train.head(3)
+
+# %%
+test.head(3)
 
 # %% [markdown]
 # - ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "nta", "borocode", "boro_ct", "zip_city", "st_assem", "st_senate", "cb_num", "cncldist"]
@@ -154,6 +162,9 @@ test = df.iloc[len(test):].reset_index(drop=True)
 train.head(3)
 
 # %%
+test.head(3)
+
+# %%
 cat_cols = ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "nta",
      "borocode", "boro_ct", "zip_city", "st_assem", "st_senate", "cb_num", "cncldist"]
 
@@ -168,6 +179,7 @@ train_folds_v2(
     cat_cols,
     f"../models/{Config.experiment_name}"
 )
+
 
 oof_preds_lgb = eval_folds_v2(
     train,
@@ -185,11 +197,19 @@ print(score)
 
 # %% [markdown]
 # - 0: baseline(20231222_01): 0.35653867230742026
-# - 1: 0 + target encoding by spc_common : 0.35743034180008587
-# - 2: 1 + target encoding by boro_ct : 0.4400959629763048 (leaked? boro_ct nunique = 1193, len(train) = 19984)
-
-# %%
-raise NotImplementedError()
+# - 1: te by spc_common : 0.35743034180008587
+# - 3: te by nta : 0.37301926074568037
+# - 8: te by boro_ct: 0.43922730085917006
+# 
+# - 6: te by nta + st_assem: 0.3739260565224825
+# - 7: te by boro_ct + nta: 0.437721159715496
+# - 9: te by boro_ct + st_assem: 0.4371433545641558
+# - 5: te by spc_common + st_assem: 0.4392300046476163
+# - 2: te by spc_common + boro_ct : 0.4400959629763048 (leaked? boro_ct nunique = 1193, len(train) = 19984)
+# 
+# - 4: te by spc_common + boro_ct + nta: 0.43803654498780625
+# - 10: te by spc_common + boro_ct + st_num: 0.4363921222206378
+# - 11: te by spc_common + boro_ct + problems: 0.43903556217500767
 
 # %%
 train_folds_v2(
@@ -203,6 +223,7 @@ train_folds_v2(
      "borocode", "boro_ct", "zip_city", "st_assem", "st_senate", "cb_num", "cncldist"],
     f"../models/{Config.experiment_name}"
 )
+
 
 oof_preds_ctb = eval_folds_v2(
     train,
@@ -222,7 +243,8 @@ print(
 
 
 # %% [markdown]
-# - 0.3420488873782377
+# - base: 0.34598202669025074
+# - 0.3603804713076419
 
 # %%
 import numpy as np
@@ -267,9 +289,6 @@ y_preds_ctb = predict_catboost(
 )
 
 # %%
-np.sum(oof_preds_lgb, axis=1), np.sum(oof_preds_ctb_calib, axis=1)
-
-# %%
 oof_preds_ctb_calib = apply_sigmoid(oof_preds_ctb)
 oof_preds_ctb_calib /= np.sum(oof_preds_ctb_calib, axis=1).reshape(-1, 1)
 
@@ -277,6 +296,19 @@ for i in range(10):
     print(
         i, f1_score(train["health"], np.argmax(oof_preds_lgb * i * 0.1 + oof_preds_ctb_calib * (10 - i) * 0.1, axis=1), average='macro')
     )
+
+# %%
+test_preds = y_preds_lgb # * 0.5 + y_preds_ctb * 0.5
+
+submission = pd.read_csv(CSVPath.submission, header=None)
+submission.iloc[:, 1] = np.argmax(test_preds, axis=1)
+submission.to_csv(f"submission_{Config.experiment_name}.csv", index=False, header=False)
+
+# %%
+train["health"].value_counts() / len(train)
+
+# %%
+pd.DataFrame(np.argmax(y_preds_lgb, axis=1)).value_counts() / len(y_preds_lgb)
 
 # %%
 
