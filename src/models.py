@@ -102,9 +102,8 @@ def train_lightgbm(
     lgb_params = {
         "objective": "multiclass",
         "num_class": 3,
-        "metric": "custom", # "auc"
+        "metric": "custom",
         "learning_rate": 0.01,
-        # "class_weight": {0: 1000/3535, 1: 1000/15751, 2: 1000/698},
         "seed": seed,
         "verbose": -1,
     }
