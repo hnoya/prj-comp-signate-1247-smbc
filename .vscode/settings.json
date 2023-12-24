@@ -12,4 +12,5 @@
         "editor.formatOnSave": true,
         "editor.defaultFormatter": "ms-python.black-formatter",
     },
+    "notebook.lineNumbers": "on",
 }

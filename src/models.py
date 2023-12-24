@@ -1,19 +1,19 @@
 import os
 import pickle
-
-import pandas as pd
-import numpy as np
-from sklearn.utils.class_weight import compute_sample_weight
+from typing import Any
 
 import catboost
 import lightgbm
-
+import numpy as np
+import pandas as pd
 from sklearn.metrics import f1_score
+from sklearn.utils.class_weight import compute_sample_weight
+
 
 def macro_f1(y_pred, data):
     y_true = data.get_label()
     score = f1_score(y_true, np.argmax(y_pred, axis=1), average="macro")
-    return 'macro_f1', score, True
+    return "macro_f1", score, True
 
 
 def train_catboost(
@@ -34,7 +34,7 @@ def train_catboost(
     ctb_params = {
         "objective": "MultiClass",  # "MultiClass",
         "loss_function": "CrossEntropy",  # "CrossEntropy",
-        "eval_metric": "TotalF1:average=Macro;use_weights=false", # ;use_weights=false",
+        "eval_metric": "TotalF1:average=Macro;use_weights=false",  # ;use_weights=false",
         "num_boost_round": 10_000,
         "early_stopping_rounds": 1_000,
         "learning_rate": 0.01,
@@ -42,7 +42,7 @@ def train_catboost(
         "random_seed": seed,
         "task_type": "GPU",
         # "used_ram_limit": "32gb",
-        "class_weights": [1000/3535, 1000/15751, 1000/698],
+        "class_weights": [1000 / 3535, 1000 / 15751, 1000 / 698],
     }
 
     model = catboost.CatBoost(ctb_params)
@@ -93,8 +93,10 @@ def train_lightgbm(
     X_train, y_train = train_set
     X_valid, y_valid = valid_set
     train_data = lightgbm.Dataset(
-        X_train, label=y_train, categorical_feature=categorical_features,
-        weight=compute_sample_weight(class_weight='balanced', y=y_train.values)
+        X_train,
+        label=y_train,
+        categorical_feature=categorical_features,
+        weight=compute_sample_weight(class_weight="balanced", y=y_train.values),
     )
     valid_data = lightgbm.Dataset(
         X_valid, label=y_valid, categorical_feature=categorical_features
@@ -209,7 +211,7 @@ def eval_folds_v2(
             raise NotImplementedError()
         # train.loc[train["fold"] == fold] = y_pred
         oof_preds[train.loc[train["fold"] == fold].index.to_numpy(), :] = y_pred
-    return oof_preds # train["pred"].values
+    return oof_preds  # train["pred"].values
 
 
 def train_folds(
@@ -308,3 +310,174 @@ def train_folds_v2(
             train_rec(train_df, _model_type, fold, seed, output_path)
         else:
             raise NotImplementedError(model_type)
+
+
+def eval_f1(y_pred, data):
+    y_true = data.get_label()
+    score = f1_score(y_true, (y_pred >= 0.5).astype(int), average="binary")
+    return "f1", score, True
+
+
+def train_lightgbm_v2(
+    train_set: tuple[pd.DataFrame, pd.DataFrame],
+    valid_set: tuple[pd.DataFrame, pd.DataFrame],
+    categorical_features: list[str],
+    fold: int,
+    seed: int,
+    train_params: dict[str, Any],
+    output_path: str = "../models",
+) -> None:
+    """
+    lgb_params = {
+        "objective": "multiclass",
+        "num_class": 3,
+        "metric": "custom",
+        "learning_rate": 0.01,
+        "seed": seed,
+        "verbose": -1,
+    }
+    """
+    X_train, y_train = train_set
+    X_valid, y_valid = valid_set
+    train_data = lightgbm.Dataset(
+        X_train,
+        label=y_train,
+        categorical_feature=categorical_features,
+        weight=compute_sample_weight(class_weight="balanced", y=y_train.values),
+    )
+    valid_data = lightgbm.Dataset(
+        X_valid, label=y_valid, categorical_feature=categorical_features
+    )
+    model = lightgbm.train(
+        train_params,
+        train_data,
+        valid_sets=[train_data, valid_data],
+        categorical_feature=categorical_features,
+        num_boost_round=100_000,
+        callbacks=[
+            lightgbm.early_stopping(stopping_rounds=1_000, verbose=True),
+            lightgbm.log_evaluation(1_000),
+        ],
+        feval=eval_f1,
+    )
+    pickle.dump(
+        model, open(os.path.join(output_path, "lgb_fold{}.lgbmodel".format(fold)), "wb")
+    )
+
+
+def train_catboost_v2(
+    train_set: tuple[pd.DataFrame, pd.DataFrame],
+    valid_set: tuple[pd.DataFrame, pd.DataFrame],
+    categorical_features: list[str],
+    fold: int,
+    seed: int,
+    train_params: dict[str, Any],
+    output_path: str = "../models",
+) -> None:
+    """
+    ctb_params = {
+        "objective": "MultiClass",  # "MultiClass",
+        "loss_function": "CrossEntropy",  # "CrossEntropy",
+        "eval_metric": "TotalF1:average=Macro;use_weights=false", # ;use_weights=false",
+        "num_boost_round": 10_000,
+        "early_stopping_rounds": 1_000,
+        "learning_rate": 0.01,
+        "verbose": 1_000,
+        "random_seed": seed,
+        "task_type": "GPU",
+        # "used_ram_limit": "32gb",
+        "class_weights": [1000/3535, 1000/15751, 1000/698],
+    }
+    """
+    X_train, y_train = train_set
+    X_valid, y_valid = valid_set
+    train_data = catboost.Pool(
+        X_train, label=y_train, cat_features=categorical_features
+    )
+    eval_data = catboost.Pool(X_valid, label=y_valid, cat_features=categorical_features)
+    # see: https://catboost.ai/en/docs/concepts/loss-functions-ranking#usage-information
+
+    model = catboost.CatBoost(train_params)
+    model.fit(train_data, eval_set=[eval_data], use_best_model=True, plot=False)
+    pickle.dump(
+        model, open(os.path.join(output_path, "ctb_fold{}.ctbmodel".format(fold)), "wb")
+    )
+
+
+def train_folds_v3(
+    train: pd.DataFrame,
+    folds: list[int],
+    seed: int,
+    model_type: str,
+    label_col: str,
+    not_use_cols: list[str],
+    cat_cols: list[str],
+    train_params: dict[str, Any],
+    output_path: str = "../models",
+) -> None:
+    for fold in folds:
+        train_df, valid_df = (
+            train.loc[train["fold"] != fold],
+            train.loc[train["fold"] == fold],
+        )
+        use_columns = [
+            col for col in train_df.columns.tolist() if col not in not_use_cols
+        ]
+        X_train = train_df[use_columns]
+        y_train = train_df[label_col]
+        X_valid = valid_df[use_columns]
+        y_valid = valid_df[label_col]
+
+        categorical_features = cat_cols
+        if model_type == "lgb":
+            train_lightgbm_v2(
+                (X_train, y_train),
+                (X_valid, y_valid),
+                categorical_features,
+                fold,
+                seed,
+                train_params,
+                output_path,
+            )
+        elif model_type == "ctb":
+            train_catboost_v2(
+                (X_train, y_train),
+                (X_valid, y_valid),
+                categorical_features,
+                fold,
+                seed,
+                train_params,
+                output_path,
+            )
+        else:
+            raise NotImplementedError(model_type)
+
+def eval_folds_v3(
+    train: pd.DataFrame,
+    folds: list[int],
+    seed: int,
+    model_type: str,
+    label_col: str,
+    not_use_cols: list[str],
+    cat_cols: list[str],
+    model_path: str = "../models",
+) -> np.ndarray:
+    # train["pred"] = 0
+    oof_preds = np.zeros(len(train))
+    categorical_features = cat_cols
+    for fold in folds:
+        _, valid_df = train.loc[train["fold"] != fold], train.loc[train["fold"] == fold]
+        use_columns = [
+            col for col in valid_df.columns.tolist() if col not in not_use_cols
+        ]
+        X_valid = valid_df[use_columns]
+        # y_valid = valid_df["score"]
+        if model_type == "lgb":
+            y_pred = eval_lightgbm(X_valid, fold, model_path)
+        elif model_type == "ctb":
+            y_pred = eval_catboost(X_valid, fold, categorical_features, model_path)
+        else:
+            raise NotImplementedError()
+        # train.loc[train["fold"] == fold] = y_pred
+        oof_preds[train.loc[train["fold"] == fold].index.to_numpy()] = y_pred
+    return oof_preds  # train["pred"].values

@@ -275,173 +275,302 @@ train = train.drop(["health"], axis=1)
 train["fold"] = validate("StratifiedKFold", train, Config.n_fold, train["label"].tolist(), random_state=Config.seed, shuffle=True)
 
 # %%
-from typing import Any
-import pickle
+train.head(3)
 
-import lightgbm
-import catboost
+# %%
+for fold_idx in range(Config.n_fold):
+    print(train.loc[train["fold"] == fold_idx, "label"].mean())
 
-
-def train_lightgbm_v2(
-    train_set: tuple[pd.DataFrame, pd.DataFrame],
-    valid_set: tuple[pd.DataFrame, pd.DataFrame],
-    categorical_features: list[str],
-    fold: int,
-    seed: int,
-    train_params: dict[str, Any],
-    output_path: str = "../models",
-) -> None:
-    """
-    lgb_params = {
-        "objective": "multiclass",
-        "num_class": 3,
-        "metric": "custom",
-        "learning_rate": 0.01,
-        "seed": seed,
-        "verbose": -1,
-    }
-    """
-    X_train, y_train = train_set
-    X_valid, y_valid = valid_set
-    train_data = lightgbm.Dataset(
-        X_train, label=y_train, categorical_feature=categorical_features,
-        weight=compute_sample_weight(class_weight='balanced', y=y_train.values)
-    )
-    valid_data = lightgbm.Dataset(
-        X_valid, label=y_valid, categorical_feature=categorical_features
-    )
-    model = lightgbm.train(
-        train_params,
-        train_data,
-        valid_sets=[train_data, valid_data],
-        categorical_feature=categorical_features,
-        num_boost_round=10000,
-        callbacks=[
-            lightgbm.early_stopping(stopping_rounds=1000, verbose=True),
-            lightgbm.log_evaluation(1000),
-        ],
-        feval=macro_f1,
-    )
-    pickle.dump(
-        model, open(os.path.join(output_path, "lgb_fold{}.lgbmodel".format(fold)), "wb")
-    )
-
-
-def train_catboost_v2(
-    train_set: tuple[pd.DataFrame, pd.DataFrame],
-    valid_set: tuple[pd.DataFrame, pd.DataFrame],
-    categorical_features: list[str],
-    fold: int,
-    seed: int,
-    train_params: dict[str, Any],
-    output_path: str = "../models",
-) -> None:
-    """
-    ctb_params = {
-        "objective": "MultiClass",  # "MultiClass",
-        "loss_function": "CrossEntropy",  # "CrossEntropy",
-        "eval_metric": "TotalF1:average=Macro;use_weights=false", # ;use_weights=false",
-        "num_boost_round": 10_000,
-        "early_stopping_rounds": 1_000,
-        "learning_rate": 0.01,
-        "verbose": 1_000,
-        "random_seed": seed,
-        "task_type": "GPU",
-        # "used_ram_limit": "32gb",
-        "class_weights": [1000/3535, 1000/15751, 1000/698],
-    }
-    """
-    X_train, y_train = train_set
-    X_valid, y_valid = valid_set
-    train_data = catboost.Pool(
-        X_train, label=y_train, cat_features=categorical_features
-    )
-    eval_data = catboost.Pool(X_valid, label=y_valid, cat_features=categorical_features)
-    # see: https://catboost.ai/en/docs/concepts/loss-functions-ranking#usage-information
-
-    model = catboost.CatBoost(train_params)
-    model.fit(train_data, eval_set=[eval_data], use_best_model=True, plot=False)
-    pickle.dump(
-        model, open(os.path.join(output_path, "ctb_fold{}.ctbmodel".format(fold)), "wb")
-    )
-
-def train_folds_v3(
-    train: pd.DataFrame,
-    folds: list[int],
-    seed: int,
-    model_type: str,
-    label_col: str,
-    not_use_cols: list[str],
-    cat_cols: list[str],
-    train_params: dict[str, Any],
-    output_path: str = "../models",
-) -> None:
-    for fold in folds:
-        train_df, valid_df = (
-            train.loc[train["fold"] != fold],
-            train.loc[train["fold"] == fold],
-        )
-        use_columns = [
-            col for col in train_df.columns.tolist() if col not in not_use_cols
-        ]
-        X_train = train_df[use_columns]
-        y_train = train_df[label_col]
-        X_valid = valid_df[use_columns]
-        y_valid = valid_df[label_col]
-
-        categorical_features = cat_cols
-        if model_type == "lgb":
-            train_lightgbm_v2(
-                (X_train, y_train),
-                (X_valid, y_valid),
-                categorical_features,
-                fold,
-                seed,
-                train_params,
-                output_path,
-            )
-        elif model_type == "ctb":
-            train_catboost_v2(
-                (X_train, y_train),
-                (X_valid, y_valid),
-                categorical_features,
-                fold,
-                seed,
-                train_params,
-                output_path,
-            )
-        else:
-            raise NotImplementedError(model_type)
+# %%
+from src.models import train_folds_v3, eval_folds_v3
 
 # %%
 cat_cols = ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "nta",
      "borocode", "boro_ct", "zip_city", "st_assem", "st_senate", "cb_num", "cncldist"]
 
 
-train_folds_v2(
+os.makedirs(f"../models/{Config.experiment_name}/label2", exist_ok=True)
+train_folds_v3(
     train,
     list(range(Config.n_fold)),
     Config.seed,
     "lgb",
-    "health",
-    ["health", "fold"],
+    "label",
+    ["label", "fold"],
     cat_cols,
-    f"../models/{Config.experiment_name}"
+    {
+        "objective": "binary",
+        "metric": "custom",
+        "learning_rate": 0.01,
+        "seed": Config.seed,
+        "verbose": -1,
+    },
+    f"../models/{Config.experiment_name}/label2"
 )
 
 
-oof_preds_lgb = eval_folds_v2(
+oof_preds_lgb_label2 = eval_folds_v3(
     train,
     list(range(Config.n_fold)),
     Config.seed,
     "lgb",
-    "health",
-    ["health", "fold"],
+    "label",
+    ["label", "fold"],
     cat_cols,
-    f"../models/{Config.experiment_name}"
+    f"../models/{Config.experiment_name}/label2"
 )
 
-score = f1_score(train["health"], np.argmax(oof_preds_lgb, axis=1), average='macro')
+score = f1_score(train["label"], (oof_preds_lgb_label2 >= 0.5).astype(int), average='binary')
 print(score)
+
+# %%
+for thld in range(0, 11):
+    score = f1_score(train["label"], (oof_preds_lgb_label2 >= (thld * 0.1)).astype(int), average='binary')
+    print(thld * 0.1, score)
+
+# %%
+
+
+# %%
+train = pd.read_csv(CSVPath.train).drop(["Unnamed: 0"], axis=1)
+test = pd.read_csv(CSVPath.test).drop(["Unnamed: 0"], axis=1)
+
+train = train.drop(["boroname", "nta_name", "spc_latin"], axis=1)
+test = test.drop(["boroname", "nta_name", "spc_latin"], axis=1)
+
+train, test = convert_rawdata_to_traindata(train, test)
+
+
+train["label"] = (train["health"].to_numpy() == 0).astype(int)
+train = train.drop(["health"], axis=1)
+
+train["fold"] = validate("StratifiedKFold", train, Config.n_fold, train["label"].tolist(), random_state=Config.seed, shuffle=True)
+
+for fold_idx in range(Config.n_fold):
+    print(train.loc[train["fold"] == fold_idx, "label"].mean())
+
+cat_cols = ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "nta",
+     "borocode", "boro_ct", "zip_city", "st_assem", "st_senate", "cb_num", "cncldist"]
+
+os.makedirs(f"../models/{Config.experiment_name}/label0", exist_ok=True)
+train_folds_v3(
+    train,
+    list(range(Config.n_fold)),
+    Config.seed,
+    "lgb",
+    "label",
+    ["label", "fold"],
+    cat_cols,
+    {
+        "objective": "binary",
+        "metric": "custom",
+        "learning_rate": 0.01,
+        "seed": Config.seed,
+        "verbose": -1,
+    },
+    f"../models/{Config.experiment_name}/label0"
+)
+
+
+oof_preds_lgb_label0 = eval_folds_v3(
+    train,
+    list(range(Config.n_fold)),
+    Config.seed,
+    "lgb",
+    "label",
+    ["label", "fold"],
+    cat_cols,
+    f"../models/{Config.experiment_name}/label0"
+)
+
+score = f1_score(train["label"], (oof_preds_lgb_label0 >= 0.5).astype(int), average='binary')
+print(score)
+
+# %%
+for thld in range(0, 11):
+    score = f1_score(train["label"], (oof_preds_lgb_label0 >= (thld * 0.1)).astype(int), average='binary')
+    print(thld * 0.1, score)
+
+# %%
+
+
+# %%
+train = pd.read_csv(CSVPath.train).drop(["Unnamed: 0"], axis=1)
+test = pd.read_csv(CSVPath.test).drop(["Unnamed: 0"], axis=1)
+
+train = train.drop(["boroname", "nta_name", "spc_latin"], axis=1)
+test = test.drop(["boroname", "nta_name", "spc_latin"], axis=1)
+
+train, test = convert_rawdata_to_traindata(train, test)
+
+
+train["label"] = (train["health"].to_numpy() == 1).astype(int)
+train = train.drop(["health"], axis=1)
+
+train["fold"] = validate("StratifiedKFold", train, Config.n_fold, train["label"].tolist(), random_state=Config.seed, shuffle=True)
+
+for fold_idx in range(Config.n_fold):
+    print(train.loc[train["fold"] == fold_idx, "label"].mean())
+
+cat_cols = ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "nta",
+     "borocode", "boro_ct", "zip_city", "st_assem", "st_senate", "cb_num", "cncldist"]
+
+os.makedirs(f"../models/{Config.experiment_name}/label1", exist_ok=True)
+train_folds_v3(
+    train,
+    list(range(Config.n_fold)),
+    Config.seed,
+    "lgb",
+    "label",
+    ["label", "fold"],
+    cat_cols,
+    {
+        "objective": "binary",
+        "metric": "custom",
+        "learning_rate": 0.01,
+        "seed": Config.seed,
+        "verbose": -1,
+    },
+    f"../models/{Config.experiment_name}/label1"
+)
+
+
+oof_preds_lgb_label1 = eval_folds_v3(
+    train,
+    list(range(Config.n_fold)),
+    Config.seed,
+    "lgb",
+    "label",
+    ["label", "fold"],
+    cat_cols,
+    f"../models/{Config.experiment_name}/label1"
+)
+
+score = f1_score(train["label"], (oof_preds_lgb_label1 >= 0.5).astype(int), average='binary')
+print(score)
+
+# %%
+for thld in range(0, 11):
+    score = f1_score(train["label"], (oof_preds_lgb_label1 >= (thld * 0.1)).astype(int), average='binary')
+    print(thld * 0.1, score)
+
+# %% [markdown]
+# 3class
+# - 0 0.23307126553385749
+# - 1 0.7767212364800837
+# - 2 0.05544286680189317
+# - mean 0.35507845627194473
+# 
+# binary x 3
+# - 0 0.280081466395112
+# - 1 0.8340823405217916
+# - 2 0.08051898492654075
+# - mean 0.39822759728114815
+
+# %%
+
+
+# %%
+train = pd.read_csv(CSVPath.train).drop(["Unnamed: 0"], axis=1)
+test = pd.read_csv(CSVPath.test).drop(["Unnamed: 0"], axis=1)
+
+train = train.drop(["boroname", "nta_name", "spc_latin"], axis=1)
+test = test.drop(["boroname", "nta_name", "spc_latin"], axis=1)
+
+train, test = convert_rawdata_to_traindata(train, test)
+
+# %%
+f1_score(
+    train["health"],
+    np.zeros((len(train["health"]))) + 1,
+    average="macro",
+)
+
+# %%
+f1_score(
+    (train["health"].to_numpy() == 1).astype(int),
+    # (oof_preds_lgb_label1 >= (thld * 0.1)).astype(int),
+    np.zeros((len(train["health"]))) + 1,
+    average='binary',
+)
+
+# %%
+f1_score(
+    (train["health"].to_numpy() == 1).astype(int),
+    (oof_preds_lgb_label1 >= 0.5).astype(int),
+    average='binary',
+)
+
+# %%
+oof_preds_lgb = np.zeros((len(train["health"]))) - 1
+oof_preds_lgb_eachlabel = np.stack([
+    oof_preds_lgb_label0, oof_preds_lgb_label1, oof_preds_lgb_label2
+], axis=-1)
+oof_preds_lgb_eachlabel = np.argmax(oof_preds_lgb_eachlabel, axis=1)
+
+oof_preds_lgb[np.where(oof_preds_lgb == -1)] = oof_preds_lgb_eachlabel
+
+f1_score(
+    train["health"].to_numpy().astype(int),
+    oof_preds_lgb,
+    average='macro',
+)
+
+# %%
+oof_preds_lgb = np.zeros((len(train["health"]))) - 1
+oof_preds_lgb[np.where(oof_preds_lgb_label1 >= 0.5)] = 1
+oof_preds_lgb[np.where(
+    (oof_preds_lgb_label0 >= 0.5) & (oof_preds_lgb == -1)
+)] = 0
+oof_preds_lgb[np.where(
+    (oof_preds_lgb_label2 >= 0.5) & (oof_preds_lgb == -1)
+)] = 2
+
+oof_preds_lgb_eachlabel = np.stack([
+    oof_preds_lgb_label0, oof_preds_lgb_label1, oof_preds_lgb_label2
+], axis=-1)
+oof_preds_lgb_eachlabel = np.argmax(oof_preds_lgb_eachlabel, axis=1)
+
+f1_score(
+    train["health"].to_numpy().astype(int),
+    oof_preds_lgb,
+    average='macro',
+)
+
+# %%
+oof_preds_lgb = np.zeros((len(train["health"]))) - 1
+oof_preds_lgb[np.where(oof_preds_lgb_label1 >= 0.5)] = 1
+oof_preds_lgb[np.where(
+    (oof_preds_lgb_label2 >= 0.5) & (oof_preds_lgb == -1)
+)] = 2
+oof_preds_lgb[np.where(
+    (oof_preds_lgb_label0 >= 0.5) & (oof_preds_lgb == -1)
+)] = 0
+
+oof_preds_lgb_eachlabel = np.stack([
+    oof_preds_lgb_label0, oof_preds_lgb_label1, oof_preds_lgb_label2
+], axis=-1)
+oof_preds_lgb_eachlabel = np.argmax(oof_preds_lgb_eachlabel, axis=1)
+
+f1_score(
+    train["health"].to_numpy().astype(int),
+    oof_preds_lgb,
+    average='macro',
+)
+
+# %%
+
+
+# %%
+train = pd.read_csv(CSVPath.train).drop(["Unnamed: 0"], axis=1)
+test = pd.read_csv(CSVPath.test).drop(["Unnamed: 0"], axis=1)
+
+train = train.drop(["boroname", "nta_name", "spc_latin"], axis=1)
+test = test.drop(["boroname", "nta_name", "spc_latin"], axis=1)
+
+train, test = convert_rawdata_to_traindata(train, test)
+
+train_not_label1 = train.iloc[(oof_preds_lgb_label1 < 0.5), :]
+train_not_label1["health"].value_counts() / len(train_not_label1)
 
 
