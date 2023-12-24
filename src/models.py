@@ -358,7 +358,7 @@ def train_lightgbm_v2(
             lightgbm.early_stopping(stopping_rounds=1_000, verbose=True),
             lightgbm.log_evaluation(1_000),
         ],
-        feval=eval_f1,
+        # feval=eval_f1,
     )
     pickle.dump(
         model, open(os.path.join(output_path, "lgb_fold{}.lgbmodel".format(fold)), "wb")
