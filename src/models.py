@@ -15,6 +15,14 @@ def macro_f1(y_pred, data):
     score = f1_score(y_true, np.argmax(y_pred, axis=1), average="macro")
     return "macro_f1", score, True
 
+def reg_macro_f1(y_pred, data):
+    y_true = data.get_label()
+    _y_pred = y_pred.copy()
+    _y_pred[y_pred < 0.5] = 0
+    _y_pred[np.where((0.5 <= y_pred) & (y_pred < 1.5))] = 1
+    _y_pred[1.5 < y_pred] = 2
+    score = f1_score(y_true, _y_pred.astype(int), average="macro")
+    return "macro_f1", score, True
 
 def train_catboost(
     train_set: tuple[pd.DataFrame, pd.DataFrame],
@@ -356,9 +364,10 @@ def train_lightgbm_v2(
         num_boost_round=100_000,
         callbacks=[
             lightgbm.early_stopping(stopping_rounds=1_000, verbose=True),
-            lightgbm.log_evaluation(1_000),
+            lightgbm.log_evaluation(10_000),
         ],
         # feval=eval_f1,
+        feval=reg_macro_f1,
     )
     pickle.dump(
         model, open(os.path.join(output_path, "lgb_fold{}.lgbmodel".format(fold)), "wb")
