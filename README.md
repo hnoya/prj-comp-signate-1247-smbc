@@ -13,3 +13,4 @@
 | 20231223_03 | c5bf7eaeeeb21ab1f8d8ccc682277703590c17df | Change KFold to StratifiedKFold |
 | 20231224_01 | 3adeea3cd1bff80d1284d8b46d21b5a74d7926f4 | Try binary model for each class |
 | 20231224_02 | e8c26e904fd136fec808038197a11e0299644145 | Try regression model |
+| 20231225_01 | db1be2f5cc1132f0448398870a74a55ec7bc4bdb | Fix regression model |
