@@ -221,11 +221,11 @@ test.head(3)
 cat_cols = ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "nta",
      "borocode", "boro_ct", "zip_city", "st_assem", "st_senate", "cb_num", "cncldist"]
 
-
+oof_preds_lgbs = []
 for label_idx in range(3):
     os.makedirs(f"../models/{Config.experiment_name}/label_{label_idx}", exist_ok=True)
     train["label"] = (train["health"].to_numpy() == label_idx).tolist()
-    """
+    # """
     train_folds_v3(
         train,
         list(range(Config.n_fold)),
@@ -244,7 +244,7 @@ for label_idx in range(3):
         },
         f"../models/{Config.experiment_name}/label_{label_idx}"
     )
-    """
+    # """
 
 
     oof_preds_lgb = eval_folds_v3(
@@ -261,6 +261,8 @@ for label_idx in range(3):
     score = f1_score(train["label"], (oof_preds_lgb >= 0.5).astype(int), average="binary")
     print(score)
 
+    oof_preds_lgbs.append(oof_preds_lgb)
+
 # %%
 def sigmoid(arr, k):
     return 1/(1+np.exp(-k*arr))
@@ -269,16 +271,12 @@ def sigmoid(arr, k):
 cat_cols = ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "nta",
      "borocode", "boro_ct", "zip_city", "st_assem", "st_senate", "cb_num", "cncldist"]
 
-weight_paris_list = [
-    [(3535 + 15751 + 698) / (15751 + 698), (3535 + 15751 + 698) / 3535],
-    [(3535 + 15751 + 698) / (3535 + 698), (3535 + 15751 + 698) / 15751],
-    [(3535 + 15751 + 698) / (3535 + 15751), (3535 + 15751 + 698) / 698]
-]
 
+oof_preds_ctbs = []
 for label_idx in range(3):
     os.makedirs(f"../models/{Config.experiment_name}/label_{label_idx}", exist_ok=True)
     train["label"] = (train["health"].to_numpy() == label_idx).astype(int).tolist()
-    """
+    # """
     train_folds_v3(
         train,
         list(range(Config.n_fold)),
@@ -302,7 +300,7 @@ for label_idx in range(3):
         },
         f"../models/{Config.experiment_name}/label_{label_idx}",
     )
-    """
+    # """
 
     oof_preds_ctb = eval_folds_v3(
         train,
@@ -318,6 +316,7 @@ for label_idx in range(3):
     score = f1_score(train["label"], (sigmoid(oof_preds_ctb, 1) >= 0.5).astype(int), average="binary")
     print(score)
 
+    oof_preds_ctbs.append(oof_preds_ctb)
 
 # %% [markdown]
 # - base: lgb 0.35466775297446107 ctb 0.35466775297446107
@@ -341,6 +340,10 @@ for label_idx in range(3):
         "borocode", "boro_ct", "zip_city", "st_assem", "st_senate", "cb_num", "cncldist"],
         f"../models/{Config.experiment_name}/label_{label_idx}",
     )
+
+# %%
+oof_preds_lgb = np.array([oof_preds_lgb.tolist() for oof_preds_lgb in oof_preds_lgbs]).transpose(1, 0)
+oof_preds_ctb = np.array([oof_preds_ctb.tolist() for oof_preds_ctb in oof_preds_ctbs]).transpose(1, 0)
 
 # %%
 def sigmoid(arr, k):
@@ -413,7 +416,7 @@ for weight in range(11):
 print(best_weight, best_score)
 
 # %%
-test_preds = y_preds_lgb * best_weight * 0.1 + y_preds_ctb * (10 - best_weight) * 0.1
+test_preds = oof_preds_lgb_calib * best_weight * 0.1 + oof_preds_ctb_calib * (10 - best_weight) * 0.1
 
 submission = pd.read_csv(CSVPath.submission, header=None)
 submission.iloc[:, 1] = np.argmax(test_preds, axis=1)
@@ -429,78 +432,237 @@ pd.DataFrame(np.argmax(test_preds, axis=1)).value_counts() / len(y_preds_lgb)
 
 
 # %%
-train["health_reg"] = train["health"].tolist()
-train.loc[train["health"] == 2, "health_reg"] = -1
-train["health_reg"] += 1
-train["health_reg"].describe()
+for label_idx in range(3):
+    train[f"pred_label_{label_idx}_lgb"] = oof_preds_lgb[:, label_idx]
+    train[f"pred_label_{label_idx}_ctb"] = oof_preds_ctb[:, label_idx]
+
+# %%
+cat_cols = ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "nta",
+     "borocode", "boro_ct", "zip_city", "st_assem", "st_senate", "cb_num", "cncldist"]
+
+train_folds_v3(
+    train,
+    list(range(Config.n_fold)),
+    Config.seed,
+    "lgb",
+    "health",
+    ["health", "fold", "label"],
+    cat_cols,
+    {
+        "objective": "multiclass",
+        "metric": "custom",
+        "num_class": 3,
+        "learning_rate": 0.01,
+        "seed": Config.seed,
+        "verbose": -1,
+    },
+    f"../models/{Config.experiment_name}"
+)
+
+oof_preds_lgb = eval_folds_v3(
+    train,
+    list(range(Config.n_fold)),
+    Config.seed,
+    "lgb",
+    "health",
+    ["health", "fold", "label"],
+    cat_cols,
+    f"../models/{Config.experiment_name}"
+)
+
+score = f1_score(train["health"], np.argmax(oof_preds_lgb, axis=1), average="macro")
+print(score)
+
 
 # %%
 cat_cols = ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "nta",
      "borocode", "boro_ct", "zip_city", "st_assem", "st_senate", "cb_num", "cncldist"]
 
 
-os.makedirs(f"../models/{Config.experiment_name}/reg", exist_ok=True)
 train_folds_v3(
     train,
     list(range(Config.n_fold)),
     Config.seed,
-    "lgb",
-    "health_reg",
-    ["health_reg", "health", "fold"],
+    "ctb",
+    "health",
+    ["health", "fold", "label"],
     cat_cols,
     {
-        "objective": "mse",
-        "metric": "custom",
-        # "num_class": 3,
+        "objective": "MultiClass",
+        "loss_function": "CrossEntropy",
+        "eval_metric": "TotalF1:average=Macro;use_weights=false",
+        "num_boost_round": 10_000,
+        "early_stopping_rounds": 1_000,
         "learning_rate": 0.01,
-        "seed": Config.seed,
-        "verbose": -1,
+        "verbose": 1_000,
+        "random_seed": Config.seed,
+        "task_type": "GPU",
+        # "class_weights": [1000/3535, 1000/15751, 1000/698],
+        "auto_class_weights": 'Balanced',
     },
-    f"../models/{Config.experiment_name}/reg"
+    f"../models/{Config.experiment_name}",
 )
 
 
-oof_preds_lgb_reg = eval_folds_v3(
+oof_preds_ctb = eval_folds_v3(
     train,
     list(range(Config.n_fold)),
     Config.seed,
-    "lgb",
-    "health_reg",
-    ["health_reg", "health", "fold"],
+    "ctb",
+    "health",
+    ["health", "fold", "label"],
     cat_cols,
-    f"../models/{Config.experiment_name}/reg"
+    f"../models/{Config.experiment_name}"
+)
+
+score = f1_score(train["health"], np.argmax(oof_preds_ctb, axis=1), average='macro')
+print(score)
+
+# %%
+(
+    f1_score(train["health"], np.argmax(oof_preds_lgb, axis=1), average=None),
+    f1_score(train["health"], np.argmax(oof_preds_ctb, axis=1), average=None),
 )
 
 # %%
-import seaborn as sns
+import numpy as np
+import matplotlib.pyplot as plt
+import pickle
 
+feature_importance = None
+for i in range(Config.n_fold):
+    model = pickle.load(
+        open(f"/work/models/{Config.experiment_name}/ctb_fold{i}.ctbmodel", "rb")
+    )
+    if feature_importance is None:
+        feature_importance = model.feature_importances_
+    else:
+        feature_importance += model.feature_importances_
+sorted_idx = np.argsort(feature_importance)
+fig = plt.figure(figsize=(12, 6))
+plt.barh(range(len(sorted_idx))[-30:], feature_importance[sorted_idx][-30:], align='center')
+plt.yticks(
+    range(len(sorted_idx))[-30:],
+    np.array([col for col in train.columns if col not in ["health", "fold", "label"]])[sorted_idx][-30:]
+)
+plt.title('Feature Importance')
 
-sns.kdeplot(oof_preds_lgb_reg)
 
 # %%
-lgb_thld0 = 0.5
-lgb_thld1 = 1.5
-
-oof_preds_lgb_reg_cls = np.zeros_like(oof_preds_lgb_reg).astype(int)
-oof_preds_lgb_reg_cls[np.where(oof_preds_lgb_reg <= lgb_thld0)] = 2
-oof_preds_lgb_reg_cls[np.where(lgb_thld1 < oof_preds_lgb_reg)] = 1
-
-score = f1_score(train["health"], oof_preds_lgb_reg_cls, average='macro')
-print(score)
+for label_idx in range(3):
+    test[f"pred_label_{label_idx}_lgb"] = y_preds_lgb[:, label_idx]
+    test[f"pred_label_{label_idx}_ctb"] = y_preds_ctb[:, label_idx]
 
 # %%
-lgb_thld0 = np.quantile(oof_preds_lgb_reg, 0.034928)
-lgb_thld1 = np.quantile(oof_preds_lgb_reg, 1 - 0.176892)
+y_preds_lgb = predict_lightgbm(
+    test[[col for col in test.columns if col not in ["health", "fold", "label"]]],
+    list(range(Config.n_fold)),
+    f"../models/{Config.experiment_name}",
+)
 
-oof_preds_lgb_reg_cls = np.zeros_like(oof_preds_lgb_reg).astype(int)
-oof_preds_lgb_reg_cls[np.where(oof_preds_lgb_reg <= lgb_thld0)] = 2
-oof_preds_lgb_reg_cls[np.where(lgb_thld1 < oof_preds_lgb_reg)] = 1
-
-score = f1_score(train["health"], oof_preds_lgb_reg_cls, average='macro')
-print(score)
+y_preds_ctb = predict_catboost(
+    test[[col for col in test.columns if col not in ["health", "fold", "label"]]],
+    list(range(Config.n_fold)),
+    ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "nta",
+     "borocode", "boro_ct", "zip_city", "st_assem", "st_senate", "cb_num", "cncldist"],
+    f"../models/{Config.experiment_name}",
+)
 
 # %%
-lgb_thld0, lgb_thld1
+def sigmoid(arr, k):
+    return 1/(1+np.exp(-k*arr))
+
+from scipy import optimize
+
+def calc_f1(param, x, y):
+    arr = np.zeros_like(x)
+    for i in range(3):
+        arr[:, i] = sigmoid(np.array(x)[:, i], param[i])
+    return -1 * f1_score(y, np.argmax(arr, axis=1), average='macro')
+
+para = [1.0, 1.0, 1.0]
+
+m = optimize.minimize(
+    calc_f1, para, args=(oof_preds_ctb.tolist(), train["health"].tolist()),
+    method="Nelder-Mead"
+)
+
+print(para, m.x, m.fun)
+cbt_weight = m.x
+
+# %%
+def inv_sigmoid(arr):
+    return np.log(arr / (1 - arr))
+
+def calc_f1(param, x, y):
+    arr = np.zeros_like(x)
+    for i in range(3):
+        arr[:, i] = sigmoid(inv_sigmoid(np.array(x)[:, i]), param[i])
+    return -1 * f1_score(y, np.argmax(arr, axis=1), average='macro')
+
+para = [1.0, 1.0, 1.0]
+
+m = optimize.minimize(
+    calc_f1, para, args=(oof_preds_lgb.tolist(), train["health"].tolist()),
+    method="Nelder-Mead"
+)
+
+print(para, m.x, m.fun)
+lgb_weight = m.x
+
+# %%
+oof_preds_ctb_calib = np.zeros_like(oof_preds_ctb)
+for i in range(3):
+    oof_preds_ctb_calib[:, i] = sigmoid(np.array(oof_preds_ctb)[:, i], cbt_weight[i])
+
+oof_preds_ctb_calib /= np.sum(oof_preds_ctb_calib, axis=1).reshape(-1, 1)
+
+oof_preds_lgb_calib = np.zeros_like(oof_preds_lgb)
+for i in range(3):
+    oof_preds_lgb_calib[:, i] = sigmoid(inv_sigmoid(np.array(oof_preds_lgb)[:, i]), lgb_weight[i])
+
+oof_preds_lgb_calib /= np.sum(oof_preds_lgb_calib, axis=1).reshape(-1, 1)
+
+# %%
+best_weight = 0
+best_score = 0
+for weight in range(11):
+    weighted_pred = np.argmax(oof_preds_lgb_calib * weight * 0.1 + oof_preds_ctb_calib * (10 - weight) * 0.1, axis=1)
+    score = f1_score(train["health"], weighted_pred, average='macro')
+    print(
+        weight, score
+    )
+    if best_score < score:
+        best_score = score
+        best_weight = weight
+    
+print(best_weight, best_score)
+
+# %%
+test_preds_ctb_calib = np.zeros_like(y_preds_ctb)
+for i in range(3):
+    test_preds_ctb_calib[:, i] = sigmoid(np.array(y_preds_ctb)[:, i], cbt_weight[i])
+
+test_preds_ctb_calib /= np.sum(test_preds_ctb_calib, axis=1).reshape(-1, 1)
+
+test_preds_lgb_calib = np.zeros_like(y_preds_lgb)
+for i in range(3):
+    test_preds_lgb_calib[:, i] = sigmoid(inv_sigmoid(np.array(y_preds_lgb)[:, i]), lgb_weight[i])
+
+test_preds_lgb_calib /= np.sum(test_preds_lgb_calib, axis=1).reshape(-1, 1)
+
+# %%
+test_preds = test_preds_lgb_calib * best_weight * 0.1 + test_preds_ctb_calib * (10 - best_weight) * 0.1
+
+submission = pd.read_csv(CSVPath.submission, header=None)
+submission.iloc[:, 1] = np.argmax(test_preds, axis=1)
+submission.to_csv(f"submission_{Config.experiment_name}.csv", index=False, header=False)
+
+# %%
+train["health"].value_counts() / len(train)
+
+# %%
+pd.DataFrame(np.argmax(test_preds, axis=1)).value_counts() / len(y_preds_lgb)
 
 # %%
 
