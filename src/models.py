@@ -90,14 +90,18 @@ def predict_catboost(
     categorical_features: list[str],
     model_path: str = "../models",
 ):
-    y_pred = np.zeros((X_test.shape[0], 3), dtype="float32")
+    y_pred = None
     for fold in folds:
         model = pickle.load(
             open(os.path.join(model_path, "ctb_fold{}.ctbmodel".format(fold)), "rb")
         )
-        y_pred += model.predict(
+        _y_pred = model.predict(
             catboost.Pool(X_test, cat_features=categorical_features)
         ) / len(folds)
+        if y_pred is None:
+            y_pred = _y_pred
+        else:
+            y_pred += _y_pred
     return y_pred
 
 
@@ -158,12 +162,16 @@ def eval_lightgbm(
 def predict_lightgbm(
     X_test: pd.DataFrame, folds: list[int], model_path: str = "../models"
 ) -> np.ndarray:
-    y_pred = np.zeros((X_test.shape[0], 3), dtype="float32")
+    y_pred = None
     for fold in folds:
         model = pickle.load(
             open(os.path.join(model_path, "lgb_fold{}.lgbmodel".format(fold)), "rb")
         )
-        y_pred += model.predict(X_test, num_iteration=model.best_iteration) / len(folds)
+        _y_pred = model.predict(X_test, num_iteration=model.best_iteration) / len(folds)
+        if y_pred is None:
+            y_pred = _y_pred
+        else:
+            y_pred += _y_pred
     return y_pred
 
 
