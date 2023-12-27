@@ -356,6 +356,12 @@ def train_lightgbm_v2(
     valid_data = lightgbm.Dataset(
         X_valid, label=y_valid, categorical_feature=categorical_features
     )
+    if train_params["objective"] == "binary":
+        feval = eval_f1
+    elif train_params["objective"] == "multiclass":
+        feval = macro_f1
+    elif train_params["objective"] == "regression":
+        feval = reg_macro_f1
     model = lightgbm.train(
         train_params,
         train_data,
@@ -366,7 +372,7 @@ def train_lightgbm_v2(
             lightgbm.early_stopping(stopping_rounds=1_000, verbose=True),
             lightgbm.log_evaluation(10_000),
         ],
-        feval=eval_f1 if train_params["objective"] in ["binary", "multiclass"] else reg_macro_f1,
+        feval=feval,
         # feval=reg_macro_f1,
     )
     pickle.dump(
@@ -471,9 +477,8 @@ def eval_folds_v3(
     cat_cols: list[str],
     model_path: str = "../models",
 ) -> np.ndarray:
-    # train["pred"] = 0
-    oof_preds = np.zeros(len(train))
     categorical_features = cat_cols
+    oof_preds = None
     for fold in folds:
         _, valid_df = train.loc[train["fold"] != fold], train.loc[train["fold"] == fold]
         use_columns = [
@@ -488,5 +493,13 @@ def eval_folds_v3(
         else:
             raise NotImplementedError()
         # train.loc[train["fold"] == fold] = y_pred
-        oof_preds[train.loc[train["fold"] == fold].index.to_numpy()] = y_pred
+        if oof_preds is None:
+            if len(y_pred.shape) > 1:
+                oof_preds = np.zeros((len(train), y_pred.shape[1]))
+            else:
+                oof_preds = np.zeros(len(train))
+        if len(y_pred.shape) > 1:
+            oof_preds[train.loc[train["fold"] == fold].index.to_numpy(), :] = y_pred
+        else:
+            oof_preds[train.loc[train["fold"] == fold].index.to_numpy()] = y_pred
     return oof_preds  # train["pred"].values
