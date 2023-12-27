@@ -18,9 +18,20 @@ def macro_f1(y_pred, data):
 def reg_macro_f1(y_pred, data):
     y_true = data.get_label()
     _y_pred = y_pred.copy()
+    # """
     _y_pred[y_pred < 0.5] = 0
     _y_pred[np.where((0.5 <= y_pred) & (y_pred < 1.5))] = 1
     _y_pred[1.5 < y_pred] = 2
+    # """
+    """
+    lgb_thld0 = np.quantile(y_pred, 0.034928)
+    lgb_thld1 = np.quantile(y_pred, 1 - 0.176892)
+
+    _y_pred = y_pred.copy()
+    _y_pred[y_pred < lgb_thld0] = 0
+    _y_pred[np.where((lgb_thld0 <= y_pred) & (y_pred < lgb_thld1))] = 1
+    _y_pred[lgb_thld1 < y_pred] = 2
+    """
     score = f1_score(y_true, _y_pred.astype(int), average="macro")
     return "macro_f1", score, True
 
@@ -360,7 +371,7 @@ def train_lightgbm_v2(
         feval = eval_f1
     elif train_params["objective"] == "multiclass":
         feval = macro_f1
-    elif train_params["objective"] == "regression":
+    elif train_params["objective"] in ["regression", "mae", "mse"]:
         feval = reg_macro_f1
     model = lightgbm.train(
         train_params,

@@ -24,3 +24,5 @@ catboost
 #faiss-cpu
 #surprise
 optuna
+scipy
+geopy
