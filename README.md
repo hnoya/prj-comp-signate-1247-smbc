@@ -17,3 +17,4 @@
 | 20231226_01 | 66396b933f018e2a827a74c46fcb3668dce36e4e | 0.3476338994633227 | Try 3 binary model w/ regression opt |
 | 20231226_02 | 78d0697361c37d031d2195903137009f009f7f10 | 0.3466229901621926 | Try to fix target encoding leakage |
 | 20231227_01 | bd2bea5bd88c4de2549ac622a3d1e66b0bb3e280 | 0.3685119575375633 | Add static features |
+| 20231227_02 | 94909033ee7cb91e86735b910cb03a571a9f4e08 | 0.3895433962532364 | Try 3 binary model + static features -> stack (leaked) |
