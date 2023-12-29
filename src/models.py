@@ -425,9 +425,15 @@ def train_catboost_v2(
     """
     X_train, y_train = train_set
     X_valid, y_valid = valid_set
-    train_data = catboost.Pool(
-        X_train, label=y_train, cat_features=categorical_features
-    )
+    if train_params["objective"] in ["RMSE", "MAE"]:
+        train_data = catboost.Pool(
+            X_train, label=y_train, cat_features=categorical_features,
+            weight=compute_sample_weight(class_weight="balanced", y=y_train.values),
+        )
+    else:
+        train_data = catboost.Pool(
+            X_train, label=y_train, cat_features=categorical_features,
+        )
     eval_data = catboost.Pool(X_valid, label=y_valid, cat_features=categorical_features)
     # see: https://catboost.ai/en/docs/concepts/loss-functions-ranking#usage-information
 
