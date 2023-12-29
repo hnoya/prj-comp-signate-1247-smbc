@@ -389,7 +389,7 @@ def train_lightgbm_v2(
         num_boost_round=100_000,
         callbacks=[
             lightgbm.early_stopping(stopping_rounds=1_000, verbose=True),
-            lightgbm.log_evaluation(10_000),
+            lightgbm.log_evaluation(1_000),
         ],
         feval=feval,
         # feval=reg_macro_f1,
