@@ -20,3 +20,4 @@
 | 20231227_02 | 94909033ee7cb91e86735b910cb03a571a9f4e08 | 0.3895433962532364 | Try 3 binary model + static features -> stack (leaked) |
 | 20231228_01 | 3b531176e643be58c142238f9eedf25f02094137 | 0.3653823426970521 | Add target encoding |
 | 20231228_02 | 6899ef9ff797b92286890520c60e73ae18c65047 | 0.366415570496963  | Add single column feature engineering |
+| 20231229_01 | 08c6a126a7fb91851aeaf856697af2d9bc711b56 | 0.3515051702377618 | Try regression model and pseudo labeling (not worked, just copied pred.) |
