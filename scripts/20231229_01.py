@@ -339,10 +339,10 @@ for fold_idx in range(Config.n_fold):
             "objective": "RMSE",  # "MultiClass",
             "loss_function": "RMSE",  # "CrossEntropy",
             # "eval_metric": "TotalF1:average=Macro;use_weights=false", # ;use_weights=false",
-            "num_boost_round": 10_000,
+            "num_boost_round": 100_000,
             "early_stopping_rounds": 1_000,
-            "learning_rate": 0.5, # 0.01
-            "verbose": 1_000,
+            "learning_rate": 0.01, # 0.01
+            "verbose": 10_000,
             "random_seed": Config.seed,
             "task_type": "GPU",
             # "class_weights": [1000/3535, 1000/15751, 1000/698],
@@ -366,7 +366,7 @@ for fold_idx in range(Config.n_fold):
 # - base (20231228_02): 0.36431500437373465
 # - RMSE
 #     - no weight: 0.35150517023776184
-#     - weight: 
+#     - weight: 0.33754706742636303 (~70min/5folds with lr=0.5)
 # - MAE:
 #     - no weight: 0.3386548987938008
 #     - weight: 0.30898382570729116
@@ -396,18 +396,6 @@ print(para, m.x, m.fun)
 ctb_thlds = m.x
 
 # %%
-raise NotImplementedError
-
-# %%
-(
-    f1_score(train["health"], np.argmax(oof_preds_lgb, axis=1), average=None),
-    f1_score(train["health"], np.argmax(oof_preds_ctb, axis=1), average=None),
-)
-
-# %%
-train.head(3)
-
-# %%
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
@@ -429,141 +417,6 @@ plt.yticks(
     np.array([col for col in _train.columns if col not in ["health", "fold"]])[sorted_idx][-30:]
 )
 plt.title('Feature Importance')
-
-
-# %%
-def add_te(train, test, col):
-    for class_idx in range(3):
-        train[f"health_is_{class_idx}"] = (train["health"].to_numpy() == class_idx).astype(int).tolist()
-        all_train_df = train.groupby(
-            col, as_index=False
-        ).agg({f"health_is_{class_idx}": ["sum", "count"]})
-        te_dict = (all_train_df[(f"health_is_{class_idx}", 'sum')] / (all_train_df[(f"health_is_{class_idx}", 'count')] + 1)).to_dict()
-        test[f"health_is_{class_idx}_te_by_{col}"] = pd.to_numeric(test[col].apply(lambda x: te_dict[x] if x in te_dict.keys() else pd.NA), errors="coerce")
-        train = train.drop([f"health_is_{class_idx}"], axis=1)
-    return train, test
-
-# %%
-import warnings
-
-for col in cat_cols:
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore")
-        _, test = add_te(train, test, col)
-
-# %%
-y_preds_lgb = predict_lightgbm(
-    test[[col for col in test.columns if col not in ["health", "fold"]]],
-    list(range(Config.n_fold)),
-    f"../models/{Config.experiment_name}",
-)
-
-y_preds_ctb = predict_catboost(
-    test[[col for col in test.columns if col not in ["health", "fold"]]],
-    list(range(Config.n_fold)),
-    ["curb_loc", "guards", "sidewalk", "user_type", "problems", "spc_common", "nta",
-     "borocode", "boro_ct", "zip_city", "st_assem", "st_senate", "cb_num", "cncldist",
-     "spc_common_pre", "spc_common_post"],
-    f"../models/{Config.experiment_name}",
-)
-
-# %%
-def sigmoid(arr, k):
-    return 1/(1+np.exp(-k*arr))
-
-from scipy import optimize
-
-def calc_f1(param, x, y):
-    arr = np.zeros_like(x)
-    for i in range(3):
-        arr[:, i] = sigmoid(np.array(x)[:, i], param[i])
-    return -1 * f1_score(y, np.argmax(arr, axis=1), average='macro')
-
-para = [1.0, 1.0, 1.0]
-
-m = optimize.minimize(
-    calc_f1, para, args=(oof_preds_ctb.tolist(), train["health"].tolist()),
-    method="Nelder-Mead"
-)
-
-print(para, m.x, m.fun)
-cbt_weight = m.x
-
-# %%
-def inv_sigmoid(arr):
-    return np.log(arr / (1 - arr))
-
-def calc_f1(param, x, y):
-    arr = np.zeros_like(x)
-    for i in range(3):
-        arr[:, i] = sigmoid(inv_sigmoid(np.array(x)[:, i]), param[i])
-    return -1 * f1_score(y, np.argmax(arr, axis=1), average='macro')
-
-para = [1.0, 1.0, 1.0]
-
-m = optimize.minimize(
-    calc_f1, para, args=(oof_preds_lgb.tolist(), train["health"].tolist()),
-    method="Nelder-Mead"
-)
-
-print(para, m.x, m.fun)
-lgb_weight = m.x
-
-# %%
-oof_preds_ctb_calib = np.zeros_like(oof_preds_ctb)
-for i in range(3):
-    oof_preds_ctb_calib[:, i] = sigmoid(np.array(oof_preds_ctb)[:, i], cbt_weight[i])
-
-oof_preds_ctb_calib /= np.sum(oof_preds_ctb_calib, axis=1).reshape(-1, 1)
-
-oof_preds_lgb_calib = np.zeros_like(oof_preds_lgb)
-for i in range(3):
-    oof_preds_lgb_calib[:, i] = sigmoid(inv_sigmoid(np.array(oof_preds_lgb)[:, i]), lgb_weight[i])
-
-oof_preds_lgb_calib /= np.sum(oof_preds_lgb_calib, axis=1).reshape(-1, 1)
-
-# %%
-best_weight = 0
-best_score = 0
-for weight in range(11):
-    weighted_pred = np.argmax(oof_preds_lgb_calib * weight * 0.1 + oof_preds_ctb_calib * (10 - weight) * 0.1, axis=1)
-    score = f1_score(train["health"], weighted_pred, average='macro')
-    print(
-        weight, score
-    )
-    if best_score < score:
-        best_score = score
-        best_weight = weight
-    
-print(best_weight, best_score)
-
-# %%
-test_preds_ctb_calib = np.zeros_like(y_preds_ctb)
-for i in range(3):
-    test_preds_ctb_calib[:, i] = sigmoid(np.array(y_preds_ctb)[:, i], cbt_weight[i])
-
-test_preds_ctb_calib /= np.sum(test_preds_ctb_calib, axis=1).reshape(-1, 1)
-
-test_preds_lgb_calib = np.zeros_like(y_preds_lgb)
-for i in range(3):
-    test_preds_lgb_calib[:, i] = sigmoid(inv_sigmoid(np.array(y_preds_lgb)[:, i]), lgb_weight[i])
-
-test_preds_lgb_calib /= np.sum(test_preds_lgb_calib, axis=1).reshape(-1, 1)
-
-# %%
-test_preds = test_preds_lgb_calib * best_weight * 0.1 + test_preds_ctb_calib * (10 - best_weight) * 0.1
-
-submission = pd.read_csv(CSVPath.submission, header=None)
-submission.iloc[:, 1] = np.argmax(test_preds, axis=1)
-submission.to_csv(f"submission_{Config.experiment_name}.csv", index=False, header=False)
-
-# %%
-train["health"].value_counts() / len(train)
-
-# %%
-pd.DataFrame(np.argmax(test_preds, axis=1)).value_counts() / len(y_preds_lgb)
-
-# %%
 
 
 # %%
