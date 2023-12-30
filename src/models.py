@@ -193,7 +193,6 @@ def eval_folds(
             col for col in valid_df.columns.tolist() if col not in not_use_cols
         ]
         X_valid = valid_df[use_columns]
-        # y_valid = valid_df["score"]
         if model_type == "lgb":
             y_pred = eval_lightgbm(X_valid, fold, model_path)
         elif model_type == "ctb":
@@ -217,7 +216,6 @@ def eval_folds_v2(
     cat_cols: list[str],
     model_path: str = "../models",
 ) -> np.ndarray:
-    # train["pred"] = 0
     oof_preds = np.zeros((len(train), 3))
     categorical_features = cat_cols
     for fold in folds:
@@ -226,7 +224,6 @@ def eval_folds_v2(
             col for col in valid_df.columns.tolist() if col not in not_use_cols
         ]
         X_valid = valid_df[use_columns]
-        # y_valid = valid_df["score"]
         if model_type == "lgb":
             y_pred = eval_lightgbm(X_valid, fold, model_path)
         elif model_type == "ctb":
@@ -236,9 +233,8 @@ def eval_folds_v2(
             y_pred = eval_rec(valid_df, fold, _model_type, model_path)
         else:
             raise NotImplementedError()
-        # train.loc[train["fold"] == fold] = y_pred
         oof_preds[train.loc[train["fold"] == fold].index.to_numpy(), :] = y_pred
-    return oof_preds  # train["pred"].values
+    return oof_preds
 
 
 def train_folds(
@@ -392,7 +388,6 @@ def train_lightgbm_v2(
             lightgbm.log_evaluation(1_000),
         ],
         feval=feval,
-        # feval=reg_macro_f1,
     )
     pickle.dump(
         model, open(os.path.join(output_path, "lgb_fold{}.lgbmodel".format(fold)), "wb")
@@ -425,17 +420,11 @@ def train_catboost_v2(
     """
     X_train, y_train = train_set
     X_valid, y_valid = valid_set
-    if train_params["objective"] in ["RMSE", "MAE"]:
-        train_data = catboost.Pool(
-            X_train, label=y_train, cat_features=categorical_features,
-            weight=compute_sample_weight(class_weight="balanced", y=y_train.values),
-        )
-    else:
-        train_data = catboost.Pool(
-            X_train, label=y_train, cat_features=categorical_features,
-        )
+    train_data = catboost.Pool(
+        X_train, label=y_train, cat_features=categorical_features,
+        # weight=compute_sample_weight(class_weight="balanced", y=y_train.values),
+    )
     eval_data = catboost.Pool(X_valid, label=y_valid, cat_features=categorical_features)
-    # see: https://catboost.ai/en/docs/concepts/loss-functions-ranking#usage-information
 
     model = catboost.CatBoost(train_params)
     model.fit(train_data, eval_set=[eval_data], use_best_model=True, plot=False)
@@ -510,14 +499,12 @@ def eval_folds_v3(
             col for col in valid_df.columns.tolist() if col not in not_use_cols
         ]
         X_valid = valid_df[use_columns]
-        # y_valid = valid_df["score"]
         if model_type == "lgb":
             y_pred = eval_lightgbm(X_valid, fold, model_path)
         elif model_type == "ctb":
             y_pred = eval_catboost(X_valid, fold, categorical_features, model_path)
         else:
             raise NotImplementedError()
-        # train.loc[train["fold"] == fold] = y_pred
         if oof_preds is None:
             if len(y_pred.shape) > 1:
                 oof_preds = np.zeros((len(train), y_pred.shape[1]))
@@ -527,4 +514,4 @@ def eval_folds_v3(
             oof_preds[train.loc[train["fold"] == fold].index.to_numpy(), :] = y_pred
         else:
             oof_preds[train.loc[train["fold"] == fold].index.to_numpy()] = y_pred
-    return oof_preds  # train["pred"].values
+    return oof_preds
