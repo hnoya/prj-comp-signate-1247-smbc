@@ -23,3 +23,4 @@
 | 20231229_01 | 08c6a126a7fb91851aeaf856697af2d9bc711b56 | 0.3515051702377618 | Try regression model and pseudo labeling (not worked, just copied pred.) |
 | 20231230_01 | 0219be8eb28757ea66f179a102be38a9a19e18b4 | 0.3405435854405206 | Try 3 binary model w/ rule merging |
 | 20231231_01 | 1c9a108dcb03f0e25b607d65ccbfdd2d0e7a8337 | 0.3674779680478224 | Add single column feature |
+| 20231231_02 | 52d5c1e0514ee66d105d9c3c1399cfd0943fd7fe | 0.3579469806763103 | Add more quantitative feature |
