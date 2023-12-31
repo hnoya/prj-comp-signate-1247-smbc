@@ -3,7 +3,7 @@ import pandas as pd
 
 def make_ratio(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
     for col in cols:
-        df[col + "_ratio"] = df[col].map(df.value_counts(dropna=False)) / len(df)
+        df[col + "_ratio"] = df[col].map(df[col].value_counts(dropna=False)) / len(df)
     return df
 
 
