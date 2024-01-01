@@ -369,14 +369,20 @@ def train_lightgbm_v2(
         weight=compute_sample_weight(class_weight="balanced", y=y_train.values),
     )
     valid_data = lightgbm.Dataset(
-        X_valid, label=y_valid, categorical_feature=categorical_features
+        X_valid, label=y_valid, categorical_feature=categorical_features,
+        weight=compute_sample_weight(class_weight="balanced", y=y_valid.values),
     )
-    if train_params["objective"] == "binary":
-        feval = eval_f1
-    elif train_params["objective"] == "multiclass":
-        feval = macro_f1
-    elif train_params["objective"] in ["regression", "mae", "mse"]:
-        feval = reg_macro_f1
+    if "metric" in train_params.keys() and train_params["metric"] == "custom":
+        if train_params["objective"] == "binary":
+            feval = eval_f1
+        elif train_params["objective"] == "multiclass":
+            feval = macro_f1
+        elif train_params["objective"] in ["regression", "mae", "mse"]:
+            feval = reg_macro_f1
+        else:
+            raise NotImplementedError()
+    else:
+        feval=None
     model = lightgbm.train(
         train_params,
         train_data,
@@ -424,7 +430,11 @@ def train_catboost_v2(
         X_train, label=y_train, cat_features=categorical_features,
         # weight=compute_sample_weight(class_weight="balanced", y=y_train.values),
     )
-    eval_data = catboost.Pool(X_valid, label=y_valid, cat_features=categorical_features)
+    eval_data = catboost.Pool(
+        X_valid, label=y_valid,
+        cat_features=categorical_features,
+        # weight=compute_sample_weight(class_weight="balanced", y=y_valid.values),
+    )
 
     model = catboost.CatBoost(train_params)
     model.fit(train_data, eval_set=[eval_data], use_best_model=True, plot=False)
