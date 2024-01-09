@@ -1,4 +1,8 @@
 # prj-comp-signate-1247-smbc
+## 使用方法
+- `docker-compose up`で環境作成
+- scripts/下のコードが実行コード
+   - 1ファイル1実験の構成
 
 ## 記録
 
